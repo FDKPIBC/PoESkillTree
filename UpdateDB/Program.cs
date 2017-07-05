@@ -16,7 +16,7 @@ namespace UpdateDB
     /// <code>UpdateDB /VersionControlledOnly /SourceCodeDir</code> or run dist-update.bat.
     /// If you only want to update some of these three lists, you can specify them explicitly
     /// (skip the arguments that you don't want):
-    /// <code>UpdateDB /Affixes /Items /Gems /SourceCodeDir</code>
+    /// <code>UpdateDB /Items /Uniques /Gems /RePoE /SourceCodeDir</code>
     /// </para>
     /// <para>
     /// The other files (base item images and skill tree assets) are not version controlled. They are
@@ -35,7 +35,6 @@ namespace UpdateDB
         {
             var args = new Arguments
             {
-                CreateBackup = true,
                 ActivatedLoaders = LoaderCategories.Any,
                 LoaderFlags = new List<string>(),
                 OutputDirectory = OutputDirectory.AppData
@@ -66,20 +65,15 @@ namespace UpdateDB
                     case "/?":
                         Console.WriteLine("Updates item database.\r\n");
                         Console.WriteLine("Flags:\r\n");
-                        Console.WriteLine("/VersionControlledOnly    Only download version controlled files (gem, affix and base item lists).");
+                        Console.WriteLine("/VersionControlledOnly    Only download version controlled files (gem, base item and unique lists and RePoE data).");
                         Console.WriteLine("/NotVersionControlledOnly Only download not version controlled files (item images and skill tree assets).");
                         Console.WriteLine("/SourceCodeDir            Save into the WPFSKillTree source code directory instead of the AppData directory.");
                         Console.WriteLine("/CurrentDir               Save into the current directory instead of the AppData directory.");
                         Console.WriteLine("/SpecifiedDir:dirPath     Save into the specified directory instead of the AppData directory.");
                         Console.WriteLine("/Quiet                    Do not display any output.");
                         Console.WriteLine("/Verbose                  Enable verbose output.");
-                        Console.WriteLine("/Affixes, /Items, /ItemImages, /TreeAssets, /Gems");
+                        Console.WriteLine("/Items, /ItemImages, /TreeAssets, /Gems, /Uniques, /RePoE");
                         Console.WriteLine("If at least one is specified, only the specified files are downloaded.\r\n");
-
-                        Console.WriteLine("Options for gem loader (only one can be specified):\r\n");
-                        Console.WriteLine("/Gems.Single:gemName      Update the given gem in the current gem file.");
-                        Console.WriteLine("/Gems.Update              Merge changed gems into the gem file instead of overwriting it.");
-                        Console.WriteLine("/Gems.Merge:filePath      Only merge the given file into the current gem file. The file name is relatvie to the execution path.");
                         return 1;
 
                     case "/versioncontrolledonly":
@@ -151,7 +145,6 @@ namespace UpdateDB
             public LoaderCategories ActivatedLoaders { get; set; }
             public OutputDirectory OutputDirectory { get; set; }
             public string SpecifiedOutputDirectory { get; set; }
-            public bool CreateBackup { get; set; }
             public IEnumerable<string> LoaderFlags { get; set; }
         }
     }

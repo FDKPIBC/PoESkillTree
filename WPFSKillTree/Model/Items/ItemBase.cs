@@ -1,273 +1,243 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
-using POESKillTree.Model.Items.Affixes;
 using POESKillTree.Model.Items.Enums;
+using POESKillTree.Model.Items.Mods;
 
 namespace POESKillTree.Model.Items
 {
-    public class ItemBase
+    /// <summary>
+    /// Represents an item base, e.g. Harbinger Bow or Glorious Plate.
+    /// </summary>
+    public class ItemBase : IItemBase
     {
-        private static int GetWidthForItem(ItemType type, ItemGroup group, string name)
-        {
-            switch (group)
-            {
-                case ItemGroup.Helmet:
-                case ItemGroup.BodyArmour:
-                case ItemGroup.Belt:
-                case ItemGroup.Gloves:
-                case ItemGroup.Boots:
-                case ItemGroup.Quiver:
-                case ItemGroup.Shield:
-                case ItemGroup.TwoHandedWeapon:
-                    return name == "Corroded Blade" ? 1 : 2;
-            }
-            switch (type)
-            {
-                case ItemType.OneHandedAxe:
-                case ItemType.Claw:
-                case ItemType.Sceptre:
-                    return 2;
 
-                case ItemType.OneHandedMace:
-                    if (name.EndsWith("Club") || name == "Tenderizer")
-                        return 1;
-                    return 2;
+        public int Level { get; }
+        public int RequiredStrength { get; }
+        public int RequiredDexterity { get; }
+        public int RequiredIntelligence { get; }
+        public bool DropDisabled { get; }
+        public int InventoryHeight { get; }
+        public int InventoryWidth { get; }
 
-                case ItemType.OneHandedSword:
-                    switch (name)
-                    {
-                        case "Rusted Sword":
-                        case "Gemstone Sword":
-                        case "Corsair Sword":
-                        case "Cutlass":
-                        case "Variscite Blade":
-                        case "Sabre":
-                        case "Copper Sword":
-                            return 1;
-                    }
-                    return 2;
+        public string Name { get; }
+        public ItemClass ItemClass { get; }
+        public Tags Tags { get; }
+        public string MetadataId { get; }
 
-            }
+        public int MaximumNumberOfSockets { get; }
 
-            // Thrusting swords, rings, amulets
-            return 1;
-        }
+        public bool CanHaveQuality { get; }
+        public IReadOnlyList<IMod> ImplicitMods { get; }
+        private readonly IReadOnlyList<string> _properties;
 
-        private static int GetHeightForItem(ItemType type, ItemGroup group, string name)
-        {
-            switch (group)
-            {
-                case ItemGroup.TwoHandedWeapon:
-                    return name.EndsWith("Crude Bow") || name.EndsWith("Short Bow") || name.EndsWith("Grove Bow") || name.EndsWith("Thicket Bow") ? 3 : 4;
-                case ItemGroup.Helmet:
-                case ItemGroup.Gloves:
-                case ItemGroup.Boots:
-                    return 2;
+        public ItemImage Image { get; }
 
-                case ItemGroup.Shield:
-                    if (name.EndsWith("Kite Shield") || name.EndsWith("Round Shield"))
-                        return 3;
-                    if (name.EndsWith("Tower Shield"))
-                        return 4;
-                    return 2;
-
-                case ItemGroup.Quiver:
-                case ItemGroup.BodyArmour:
-                    return 3;
-            }
-
-            // belts, amulets, rings
-            if (group != ItemGroup.OneHandedWeapon) return 1;
-
-            switch (type)
-            {
-                case ItemType.Claw:
-                    return 2;
-                case ItemType.Dagger:
-                case ItemType.Wand:
-                case ItemType.OneHandedAxe:
-                case ItemType.OneHandedMace:
-                case ItemType.Sceptre:
-                case ItemType.OneHandedSword:
-                    return 3;
-                case ItemType.ThrustingOneHandedSword:
-                    return 4;
-                default:
-                    return 1;
-            }
-        }
-
-        public int Level { get; private set; }
-        public int RequiredStrength { get; private set; }
-        public int RequiredDexterity { get; private set; }
-        public int RequiredIntelligence { get; private set; }
-
-        public string Name { get; private set; }
-        public ItemType ItemType { get; private set; }
-        public ItemGroup ItemGroup { get; private set; }
-
-        public bool CanHaveQuality { get; private set; }
-        public IReadOnlyList<Stat> ImplicitMods { get; private set; }
-        private IReadOnlyList<Stat> Properties { get; set; }
-
-        public ItemImage Image { get; private set; }
-
-        public ItemBase(Options options, XmlItemBase xmlBase)
+        public ItemBase(ItemImageService itemImageService, ModDatabase modDatabase, XmlItemBase xmlBase)
         {
             Level = xmlBase.Level;
             RequiredStrength = xmlBase.Strength;
             RequiredDexterity = xmlBase.Dexterity;
             RequiredIntelligence = xmlBase.Intelligence;
+            DropDisabled = xmlBase.DropDisabled;
+            InventoryHeight = xmlBase.InventoryHeight;
+            InventoryWidth = xmlBase.InventoryWidth;
 
             Name = xmlBase.Name;
-            ItemType = xmlBase.ItemType;
-            ItemGroup = ItemType.Group();
-            ImplicitMods = xmlBase.Implicit != null
-                ? xmlBase.Implicit.Select(i => new Stat(i, ItemType)).ToList()
-                : new List<Stat>();
-            Properties = xmlBase.Properties != null
-                ? xmlBase.Properties.Select(p => new Stat(p, ItemType)).ToList()
-                : new List<Stat>();
-            CanHaveQuality = ItemGroup == ItemGroup.OneHandedWeapon || ItemGroup == ItemGroup.TwoHandedWeapon
-                             || ItemGroup == ItemGroup.BodyArmour || ItemGroup == ItemGroup.Boots
-                             || ItemGroup == ItemGroup.Gloves || ItemGroup == ItemGroup.Helmet
-                             || ItemGroup == ItemGroup.Shield;
+            ItemClass = xmlBase.ItemClass;
+            Tags = xmlBase.Tags;
+            MetadataId = xmlBase.MetadataId;
 
-            Image = new ItemImage(options, Name, ItemGroup);
+            ImplicitMods = xmlBase.Implicit.Select(id => modDatabase.Mods[id]).ToList();
+            _properties = xmlBase.Properties;
+            CanHaveQuality = Tags.HasFlag(Tags.Weapon) || Tags.HasFlag(Tags.Armour);
+
+            Image = new ItemImage(itemImageService, Name, ItemClass);
+
+            MaximumNumberOfSockets = GetMaximumNumberOfSockets();
         }
 
         /// <summary>
-        /// Creates an ItemBase that sets <see cref="ItemGroup"/> and <see cref="ItemType"/> on
+        /// Creates an ItemBase that sets <see cref="ItemClass"/> and <see cref="Tags"/> on
         /// a best effort basis. They might not be set correctly.
         /// <para/>
-        /// Only <see cref="Name"/>, <see cref="ItemGroup"/> and <see cref="ItemType"/> may be called on
+        /// Only <see cref="Name"/>, <see cref="ItemClass"/> and <see cref="Tags"/> may be called on
         /// ItemBases created via this constructor. It is not meant to produce bases that can exist independent
         /// of the <see cref="Item"/> they are created for.
         /// </summary>
-        /// <param name="options"></param>
+        /// <param name="itemImageService"></param>
         /// <param name="itemSlot">The slot the parent <see cref="Item"/> is slotted into.
         /// <see cref="ItemSlot.Unequipable"/> if is not equipped.</param>
         /// <param name="typeLine">The TypeLine property of the parent <see cref="Item"/>.</param>
         /// <param name="weaponClass">A string representing the weapon class of the parent <see cref="Item"/>.
         /// Can be null or empty if that item is not a weapon. The weapon class generally is a property without value.</param>
         /// <param name="frameType">The frame type of the item.</param>
-        public ItemBase(Options options, ItemSlot itemSlot, string typeLine, string weaponClass, FrameType frameType)
+        public ItemBase(ItemImageService itemImageService,
+            ItemSlot itemSlot, string typeLine, string weaponClass, FrameType frameType)
         {
             // These don't matter as we won't create new items from this base.
             Level = 0;
             RequiredStrength = 0;
             RequiredDexterity = 0;
             RequiredIntelligence = 0;
-            ImplicitMods = new List<Stat>();
-            Properties = new List<Stat>();
+            DropDisabled = false;
+            InventoryHeight = 0;
+            InventoryWidth = 0;
+            MetadataId = "";
+            ImplicitMods = new List<IMod>();
+            _properties = new List<string>();
             CanHaveQuality = false;
 
             Name = typeLine;
-            ItemGroup = ItemSlotToGroup(itemSlot);
-            if (ItemGroup != ItemGroup.Unknown)
+            ItemClass = ItemSlotToClass(itemSlot);
+            if (ItemClass == ItemClass.ActiveSkillGem)
             {
-                // This might be wrong for Armour slots, but the item will most likely not be edited so this is not important.
-                ItemType = ItemGroup.Types()[0];
+                ItemClass = ItemClassEx.ItemClassForGem(typeLine);
             }
-            else if (frameType == FrameType.Gem)
-                ItemType = ItemType.Gem;
-            else if (frameType == FrameType.Currency || frameType == FrameType.DivinationCard
-                || frameType == FrameType.QuestItem || frameType == FrameType.Prophecy)
-                ItemType = ItemType.Unknown;
-            else if (typeLine.Contains("Quiver"))
-                ItemType = ItemType.Quiver;
-            else if (typeLine.Contains("Shield") || typeLine.Contains("Buckler"))
-                ItemType = ItemType.ShieldArmour;
-            else if (typeLine.Contains("Amulet") || typeLine.Contains("Talisman"))
-                ItemType = ItemType.Amulet;
-            else if (typeLine.Contains("Ring"))
-                ItemType = ItemType.Ring;
-            else if (typeLine.Contains("Belt"))
-                ItemType = ItemType.Belt;
-            else if (!string.IsNullOrEmpty(weaponClass.Trim()))
+            if (ItemClass == ItemClass.Unknown)
             {
-                ItemType type;
-                if (Enum.TryParse(Regex.Replace(weaponClass.Trim(), "([a-z]) ([A-Z])", "$1$2"), true, out type))
-                    ItemType = type;
+                if (frameType == FrameType.Gem)
+                {
+                    ItemClass = ItemClassEx.ItemClassForGem(typeLine);
+                }
+                else if (frameType == FrameType.Currency || frameType == FrameType.DivinationCard
+                         || frameType == FrameType.QuestItem || frameType == FrameType.Prophecy)
+                {
+                    ItemClass = ItemClass.Unknown;
+                }
+                else if (typeLine.Contains("Quiver"))
+                {
+                    ItemClass = ItemClass.Quiver;
+                }
+                else if (typeLine.Contains("Shield") || typeLine.Contains("Buckler"))
+                {
+                    ItemClass = ItemClass.Shield;
+                }
+                else if (typeLine.Contains("Amulet") || typeLine.Contains("Talisman"))
+                {
+                    ItemClass = ItemClass.Amulet;
+                }
+                else if (typeLine.Contains("Ring"))
+                {
+                    ItemClass = ItemClass.Ring;
+                }
+                else if (typeLine.Contains("Belt"))
+                {
+                    ItemClass = ItemClass.Belt;
+                }
+                else if (!string.IsNullOrWhiteSpace(weaponClass))
+                {
+                    // This will not catch ThrustingOneHandSword and Sceptre,
+                    // but the distinction between those and OneHandSword and OneHandMace only matters for mod crafting
+                    var itemClassStr = weaponClass.Replace("Handed", "Hand")
+                        .Replace(" ", "").Trim();
+                    ItemClass type;
+                    if (Enum.TryParse(itemClassStr, true, out type))
+                    {
+                        ItemClass = type;
+                    }
+                }
             }
 
-            if (ItemGroup == ItemGroup.Unknown)
-                ItemGroup = ItemType.Group();
-            Image = new ItemImage(options, Name, ItemGroup);
+            // This might miss some tags, but those are only important for mod crafting, 
+            // which will not happen with this item.
+            Tags = ItemClass.ToTags();
+
+            Image = new ItemImage(itemImageService, ItemClass);
         }
 
         /// <summary>
-        /// Returns the <see cref="ItemGroup"/> that fits <paramref name="itemSlot"/>
+        /// Returns the <see cref="ItemClass"/> that fits <paramref name="itemSlot"/>
         /// if it's not ambigous.
         /// </summary>
-        private static ItemGroup ItemSlotToGroup(ItemSlot itemSlot)
+        private static ItemClass ItemSlotToClass(ItemSlot itemSlot)
         {
             switch (itemSlot)
             {
-                case ItemSlot.Armor:
-                    return ItemGroup.BodyArmour;
+                case ItemSlot.BodyArmour:
+                    return ItemClass.BodyArmour;
                 case ItemSlot.Ring:
                 case ItemSlot.Ring2:
-                    return ItemGroup.Ring;
+                    return ItemClass.Ring;
                 case ItemSlot.Amulet:
-                    return ItemGroup.Amulet;
+                    return ItemClass.Amulet;
                 case ItemSlot.Helm:
-                    return ItemGroup.Helmet;
+                    return ItemClass.Helmet;
                 case ItemSlot.Gloves:
-                    return ItemGroup.Gloves;
+                    return ItemClass.Gloves;
                 case ItemSlot.Boots:
-                    return ItemGroup.Boots;
+                    return ItemClass.Boots;
                 case ItemSlot.Gem:
-                    return ItemGroup.Gem;
+                    return ItemClass.ActiveSkillGem;
                 case ItemSlot.Belt:
-                    return ItemGroup.Belt;
+                    return ItemClass.Belt;
                 default: // MainHand, OffHand, Unequippable
-                    return ItemGroup.Unknown;
+                    return ItemClass.Unknown;
             }
         }
 
-        public Item CreateItem()
-        {
-            Image.DownloadMissingImage();
-            return new Item(this, GetWidthForItem(ItemType, ItemGroup, Name), GetHeightForItem(ItemType, ItemGroup, Name))
-            {
-                Properties = new ObservableCollection<ItemMod>(GetRawProperties())
-            };
-        }
-
-        public List<ItemMod> GetRawProperties(float quality = 0)
+        public List<ItemMod> GetRawProperties(int quality = 0)
         {
             var props = new List<ItemMod>();
 
-            if (ItemGroup == ItemGroup.TwoHandedWeapon || ItemGroup == ItemGroup.OneHandedWeapon)
+            if (Tags.HasFlag(Tags.Weapon))
             {
-                var type = ItemType;
-                if (type == ItemType.Sceptre)
-                    type = ItemType.OneHandedMace;
-                else if (type == ItemType.ThrustingOneHandedSword)
-                    type = ItemType.OneHandedSword;
-                props.Add(new ItemMod(ItemType, Regex.Replace(type.ToString(), @"([a-z])([A-Z])", @"$1 $2")));
+                var itemClass = ItemClass;
+                if (itemClass == ItemClass.Sceptre)
+                    itemClass = ItemClass.OneHandMace;
+                else if (itemClass == ItemClass.ThrustingOneHandSword)
+                    itemClass = ItemClass.OneHandSword;
+                // replace "Hand" by "Handed" and add a space in front of each capital letter
+                var itemClassStr = Regex.Replace(itemClass.ToString().Replace("Hand", "Handed"), 
+                    @"([a-z])([A-Z])", @"$1 $2");
+                props.Add(new ItemMod(itemClassStr, true));
             }
 
             if (quality > 0)
             {
-                var qProp = new ItemMod(ItemType, "Quality: +#%");
-                qProp.Value.Add(quality);
-                qProp.ValueColor.Add(ItemMod.ValueColoring.LocallyAffected);
+                var qProp = new ItemMod($"Quality: +{quality}%", true, ItemMod.ValueColoring.LocallyAffected);
                 props.Add(qProp);
             }
 
-            if (Properties != null)
-                props.AddRange(Properties.Select(prop => prop.ToItemMod(true)));
+            if (_properties != null)
+                props.AddRange(_properties.Select(prop => new ItemMod(prop, true)));
             return props;
         }
 
         public override string ToString()
         {
             return Name;
+        }
+
+        private int GetMaximumNumberOfSockets()
+        {
+            var socketStat = ImplicitMods
+                .SelectMany(m => m.Stats)
+                .FirstOrDefault(s => s.Id == "local_has_X_sockets");
+            if (socketStat != null)
+            {
+                // e.g. Unset Ring
+                return socketStat.Range.From;
+            }
+            if (Tags.HasFlag(Tags.OneHand) || Tags.HasFlag(Tags.Shield))
+            {
+                return 3;
+            }
+            if (Tags.HasFlag(Tags.FishingRod))
+            {
+                return 4;
+            }
+            if (Tags.HasFlag(Tags.TwoHand) || Tags.HasFlag(Tags.BodyArmour))
+            {
+                return 6;
+            }
+            if (Tags.HasFlag(Tags.Armour))
+            {
+                // exceptions (Shield and BodyArmour) are handled above
+                return 4;
+            }
+            return 0;
         }
     }
 }

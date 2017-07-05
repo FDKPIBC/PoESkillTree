@@ -2,7 +2,7 @@
 <TestData>
   <!-- Initial test builds -->
   <TestBuild>
-    <TreeURL>https://www.pathofexile.com/passive-skill-tree/AAAAAwEABLMLYQ3NFm8aOBo-HM4dFCSqKS4rUDH7Si5QR1cNWfNfP2aeaPJyD3Kpdn92rHuMfEt8uH31fuB_44TEj0aQVZZ0m1ieV6IAp6Wsqq2Nr2yvp8BmxPbGrs9-1YvZYeNq5FHqGO1E7w7wH_Gs8i_3MvrS_lQ=</TreeURL>
+    <TreeURL>https://poebuilder.com/character/AAAAAwEABLMLYQ3NFm8aOBo-HM4dFCSqKS4rUDH7Si5QR1cNWfNfP2aeaPJyD3Kpdn92rHuMfEt8uH31fuB_44TEj0aQVZZ0m1ieV6IAp6Wsqq2Nr2yvp8BmxPbGrs9-1YvZYeNq5FHqGO1E7w7wH_Gs8i_3MvrS_lQ=</TreeURL>
     <Level>51</Level>
     <BuildFile>init\Marauder-IceCrash-51.json</BuildFile>
     <ExpectDefence>
@@ -41,7 +41,7 @@
         #Main Hand Total Combined Damage: 565-1445
         #Main Hand Physical Damage: 226-578
         #Main Hand Cold Damage: 339-867
-        Main Hand Accuracy Rating: 785
+        #Main Hand Accuracy Rating: 785
         #TODO Main Hand Attack Speed Modifier: +35%
         #FIXME Main Hand Critical Strike Chance: 9.07%
         Main Hand Critical Strike Multiplier: 150%

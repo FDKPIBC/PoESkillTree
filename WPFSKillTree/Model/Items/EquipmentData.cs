@@ -1,49 +1,60 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using POESKillTree.Model.Items.Affixes;
-using POESKillTree.Model.Items.Enums;
+using MoreLinq;
+using POESKillTree.Model.Items.Mods;
+using POESKillTree.Model.Items.StatTranslation;
 using POESKillTree.Utils;
 
 namespace POESKillTree.Model.Items
 {
     public class EquipmentData
     {
-        private readonly Options _options;
+        private const string ResourcePath =
+            "pack://application:,,,/PoESkillTree;component/Data/Equipment/";
 
-        public IReadOnlyDictionary<ItemType, IReadOnlyList<Affix>> AffixesPerItemType { get; private set; }
+        public ModDatabase ModDatabase { get; private set; }
+        public StatTranslator StatTranslator { get; private set; }
 
-        public IReadOnlyList<ItemBase> BaseList { get; private set; }
+        public IReadOnlyList<ItemBase> ItemBases { get; private set; }
 
-        public IReadOnlyDictionary<string, ItemBase> BaseDictionary { get; private set; }
+        public IReadOnlyDictionary<string, ItemBase> ItemBaseDictionary { get; private set; }
+
+        public IReadOnlyList<UniqueBase> UniqueBases { get; private set; }
+
+        public IReadOnlyDictionary<string, UniqueBase> UniqueBaseDictionary { get; private set; }
+
+        private readonly ItemImageService _itemImageService;
+
+        // ReSharper disable once ConvertToAutoPropertyWhenPossible 
+        // (private field is used to reduce ambiguity between class and property)
+        public ItemImageService ItemImageService => _itemImageService;
 
         private WordSetTreeNode _root;
 
         private EquipmentData(Options options)
         {
-            _options = options;
+            Util.TriggerPackUriSchemeInitialization();
+            _itemImageService = new ItemImageService(options);
         }
 
         private async Task InitializeAsync()
         {
-            AffixesPerItemType =
-                (from a in await LoadAffixes()
-                 group a by a.ItemType into types
-                 select types)
-                 .ToDictionary(g => g.Key, g => (IReadOnlyList<Affix>)new List<Affix>(g));
+            var modsTask = RePoEUtils.LoadAsync<Dictionary<string, JsonMod>>("mods");
+            var benchOptionsTask = RePoEUtils.LoadAsync<JsonCraftingBenchOption[]>("crafting_bench_options");
+            var npcMastersTask = RePoEUtils.LoadAsync<Dictionary<string, JsonNpcMaster>>("npc_master");
+            var statTranslationsTask = RePoEUtils.LoadAsync<List<JsonStatTranslation>>("stat_translations");
+            ModDatabase = new ModDatabase(await modsTask, await benchOptionsTask, await npcMastersTask);
+            StatTranslator = new StatTranslator(await statTranslationsTask);
 
-            BaseList = (await LoadBases()).ToList();
+            ItemBases = (await LoadBases()).ToList();
+            UniqueBases = (await LoadUniques()).ToList();
 
-            var dict = new Dictionary<string, ItemBase>();
-            foreach (var itemBase in BaseList)
-            {
-                dict[itemBase.Name] = itemBase;
-            }
-            BaseDictionary = dict;
+            ItemBaseDictionary = ItemBases.DistinctBy(b => b.Name).ToDictionary(b => b.Name);
+            UniqueBaseDictionary = UniqueBases.DistinctBy(b => b.UniqueName).ToDictionary(b => b.UniqueName);
 
-            _root = new WordSetTreeNode(BaseList.Select(m => m.Name));
+            _root = new WordSetTreeNode(ItemBases.Select(m => m.Name));
         }
 
         public static async Task<EquipmentData> CreateAsync(Options options)
@@ -53,55 +64,24 @@ namespace POESKillTree.Model.Items
             return o;
         }
 
-        private static async Task<IEnumerable<XmlAffix>> LoadAffixFile(string fileName)
-        {
-            var filename = Path.Combine(AppData.GetFolder(@"Data\Equipment"), fileName);
-            if (!File.Exists(filename))
-                return Enumerable.Empty<XmlAffix>();
-
-            var affixList = await SerializationUtils.XmlDeserializeFileAsync<XmlAffixList>(filename);
-            return affixList.Affixes;
-        }
-
-        private static async Task<IEnumerable<Affix>> LoadAffixes()
-        {
-            return (await LoadAffixFile("AffixList.xml"))
-                    .Union(await LoadAffixFile("SignatureAffixList.xml"))
-                    .SelectMany(GroupToTypes)
-                    .Select(x => new Affix(x));
-        }
-
-        private static IEnumerable<XmlAffix> GroupToTypes(XmlAffix affix)
-        {
-            if (affix.ItemGroup == ItemGroup.Unknown)
-            {
-                yield return affix;
-            }
-            else
-            {
-                foreach (var itemType in affix.ItemGroup.Types())
-                {
-                    yield return new XmlAffix
-                    {
-                        Global = affix.Global,
-                        ItemGroup = ItemGroup.Unknown,
-                        ItemType = itemType,
-                        ModType = affix.ModType,
-                        Name = affix.Name,
-                        Tiers = affix.Tiers
-                    };
-                }
-            }
-        }
-
         private async Task<IEnumerable<ItemBase>> LoadBases()
         {
-            var filename = Path.Combine(AppData.GetFolder(@"Data\Equipment"), @"ItemList.xml");
-            if (!File.Exists(filename))
-                return new List<ItemBase>();
+            var xmlList = await DeserializeXmlResourceAsync<XmlItemList>("Items.xml");
+            return xmlList.ItemBases.Select(x => new ItemBase(_itemImageService, ModDatabase, x));
+        }
 
-            var xmlList = await SerializationUtils.XmlDeserializeFileAsync<XmlItemList>(filename);
-            return xmlList.ItemBases.Select(x => new ItemBase(_options, x));
+        private async Task<IEnumerable<UniqueBase>> LoadUniques()
+        {
+            var metadataToBase = ItemBases.ToDictionary(b => b.MetadataId);
+            var xmlList = await DeserializeXmlResourceAsync<XmlUniqueList>("Uniques.xml");
+            return xmlList.Uniques.Select(
+                x => new UniqueBase(_itemImageService, ModDatabase, metadataToBase[x.BaseMetadataId], x));
+        }
+
+        private static async Task<T> DeserializeXmlResourceAsync<T>(string file)
+        {
+            var text = await SerializationUtils.ReadResourceAsync(ResourcePath + file);
+            return SerializationUtils.XmlDeserializeString<T>(text);
         }
 
         public ItemBase ItemBaseFromTypeline(string typeline)
@@ -120,7 +100,7 @@ namespace POESKillTree.Model.Items
                 return null;
             if (ms.Count > 1)
                 throw new NotSupportedException("duplicate type match");
-            return BaseDictionary[ms[0].ToString()];
+            return ItemBaseDictionary[ms[0].ToString()];
         }
 
 

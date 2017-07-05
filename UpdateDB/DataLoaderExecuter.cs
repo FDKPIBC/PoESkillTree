@@ -7,9 +7,9 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using log4net;
+using MoreLinq;
 using POESKillTree.Utils;
 using UpdateDB.DataLoading;
-using UpdateDB.DataLoading.Gems;
 
 namespace UpdateDB
 {
@@ -22,11 +22,12 @@ namespace UpdateDB
 
         private readonly LoaderCollection _loaderDefinitions = new LoaderCollection
         {
-            {"affixes", "Equipment/AffixList.xml", new AffixDataLoader(), LoaderCategories.VersionControlled, "Affixes"},
-            {"base items", "Equipment/ItemList.xml", new ItemDataLoader(), LoaderCategories.VersionControlled, "Items"},
-            {"base item images", "Equipment/Assets", new ItemImageLoader(false), LoaderCategories.NotVersionControlled, "ItemImages"},
+            {"base items", "Equipment/Items.xml", new ItemBaseLoader(), LoaderCategories.VersionControlled, "Items"},
+            {"base item images", "Equipment/Assets", new ItemImageLoader(), LoaderCategories.NotVersionControlled, "ItemImages"},
             {"skill tree assets", "", new SkillTreeLoader(), LoaderCategories.NotVersionControlled, "TreeAssets"},
-            {"gems", "ItemDB/GemList.xml", new GemLoader(new GamepediaReader()), LoaderCategories.VersionControlled, "Gems"}
+            {"gems", "ItemDB/GemList.xml", new GemLoader(), LoaderCategories.VersionControlled, "Gems"},
+            {"uniques", "Equipment/Uniques.xml", new UniqueLoader(), LoaderCategories.VersionControlled, "Uniques"},
+            {"RePoE", "RePoE", new RePoELoader(), LoaderCategories.VersionControlled, "RePoE" }
         };
 
         private readonly IArguments _arguments;
@@ -64,6 +65,8 @@ namespace UpdateDB
             }
             Log.InfoFormat("Using output directory {0}.", _savePath);
             _savePath = Path.Combine(_savePath, "Data");
+
+            _loaderDefinitions.ForEach(l => l.DataLoader.HttpClient = _httpClient);
 
             // The Affix file is big enough to be starved by other requests sometimes.
             _httpClient.Timeout = TimeSpan.FromSeconds(120);
@@ -140,7 +143,7 @@ namespace UpdateDB
                     Directory.CreateDirectory(tmpPath);
                 }
 
-                await dataLoader.LoadAndSaveAsync(_httpClient, tmpPath);
+                await dataLoader.LoadAndSaveAsync(tmpPath);
 
                 if (isFolder)
                     DirectoryEx.MoveOverwriting(tmpPath, fullPath);
@@ -150,7 +153,7 @@ namespace UpdateDB
             else
             {
                 // This is for SkillTreeLoader which writes to multiple files/folders and does the tmp stuff itself
-                await dataLoader.LoadAndSaveAsync(_httpClient, fullPath);
+                await dataLoader.LoadAndSaveAsync(fullPath);
             }
             Log.InfoFormat("Loaded {0}!", name);
         }

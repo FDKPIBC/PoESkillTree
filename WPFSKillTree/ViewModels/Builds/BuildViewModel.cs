@@ -1,4 +1,5 @@
 using System;
+using log4net;
 using POESKillTree.Localization;
 using POESKillTree.Model.Builds;
 
@@ -9,6 +10,8 @@ namespace POESKillTree.ViewModels.Builds
     /// </summary>
     public class BuildViewModel : AbstractBuildViewModel<PoEBuild>
     {
+        private static readonly ILog Log = LogManager.GetLogger(typeof(BuildViewModel));
+
         private bool _currentlyOpen;
         private bool _isVisible;
         private string _characterClass;
@@ -132,9 +135,23 @@ namespace POESKillTree.ViewModels.Builds
         {
             if (SkillTree == null || string.IsNullOrEmpty(Build.TreeUrl))
                 return;
-            PointsUsed = SkillTree.PointsUsed(Build.TreeUrl);
-            CharacterClass = SkillTree.CharacterClass(Build.TreeUrl);
-            AscendancyClass = SkillTree.AscendancyClass(Build.TreeUrl);
+
+            var deserializer = SkillTree.BuildConverter.GetUrlDeserializer(Build.TreeUrl);
+
+            Exception e;
+            if (deserializer.ValidateBuildUrl(out e))
+            {
+                PointsUsed = (uint) deserializer.GetPointsCount();
+                CharacterClass = deserializer.GetCharacterClass();
+                AscendancyClass = deserializer.GetAscendancyClass();
+            }
+            else
+            {
+                Log.Warn($"Could not get tree depending properties for {Build.Name} because the tree is invalid: {Build.TreeUrl}", e);
+                PointsUsed = 0;
+                CharacterClass = L10n.Message("Invalid Tree");
+                AscendancyClass = null;
+            }
         }
 
         public override void ApplyFilter()

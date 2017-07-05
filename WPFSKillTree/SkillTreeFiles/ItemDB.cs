@@ -8,7 +8,7 @@ using System.Xml.Serialization;
 using log4net;
 using POESKillTree.Model;
 using POESKillTree.Model.Items;
-using POESKillTree.Model.Items.Affixes;
+using POESKillTree.Model.Items.Mods;
 using POESKillTree.Utils;
 using AttackSkill = POESKillTree.SkillTreeFiles.Compute.AttackSkill;
 using DamageForm = POESKillTree.SkillTreeFiles.Compute.DamageForm;
@@ -20,7 +20,6 @@ using Weapon = POESKillTree.SkillTreeFiles.Compute.Weapon;
 
 namespace POESKillTree.SkillTreeFiles
 {
-    // TODO: Attributes can have negative value (Cast when Damage Taken L20 has 6% more Damage), AttributesOf should handle transition between less/more.
     public class ItemDB
     {
         private static readonly ILog Log = LogManager.GetLogger(typeof(ItemDB));
@@ -306,19 +305,23 @@ namespace POESKillTree.SkillTreeFiles
             // Tries to convert ValueAt instances into ValuePerLevel/ValuePerQuality or ValueForLevelRange/ValueForQualityRange instances.
             public void Optimize()
             {
-                // Values must contain only ValueAt instances with either level or quality specified and cannot contain multivalues.
-                if (Values.Exists(v => !(v is ValueAt) || v.IsMultiValue() || (v is ValueAt && !((ValueAt)v).LevelSpecified && !((ValueAt)v).QualitySpecified)))
+                // Values must contain only ValueAt instances with either level or quality specified.
+                if (Values.Exists(v => !(v is ValueAt) || (v is ValueAt && !((ValueAt)v).LevelSpecified && !((ValueAt)v).QualitySpecified)))
                     return;
+                var hasMultiValue = Values.Exists(v => v.IsMultiValue());
 
                 List<Value> optimized = new List<Value>();
                 List<ValueAt> values;
 
                 // Try per level.
                 // 1) Value at level 1 must be empty, zero or not defined.
-                if (Values.Exists(v => ((ValueAt)v).Level == 1 && (v.IsEmpty() || v.ToValue()[0] == 0)) || !Values.Exists(v => ((ValueAt)v).Level == 1))
+                // (does not support multivalues)
+                var valuesAt = Values.Cast<ValueAt>().ToList();
+                if (!hasMultiValue 
+                    && (valuesAt.Exists(v => v.Level == 1 && (v.IsEmpty() || v.ToValue()[0] == 0)) || !valuesAt.Exists(v => v.Level == 1)))
                 {
                     // 2) At least 2 non-empty values above level 1 must exist.
-                    values = Values.FindAll(v => ((ValueAt)v).LevelSpecified && !v.IsEmpty() && ((ValueAt)v).Level > 1).Cast<ValueAt>().ToList();
+                    values = valuesAt.FindAll(v => v.LevelSpecified && !v.IsEmpty() && v.Level > 1).ToList();
                     if (values.Count > 2)
                     {
                         // 3) All values must have same value to level ratio (level - 1 actually).
@@ -341,9 +344,10 @@ namespace POESKillTree.SkillTreeFiles
                 }
 
                 // Try per quality.
-                values = Values.FindAll(v => ((ValueAt)v).QualitySpecified && !v.IsEmpty()).Cast<ValueAt>().ToList();
+                values = Values.Cast<ValueAt>().Where(v => v.QualitySpecified && !v.IsEmpty()).ToList();
                 // 1) At least 2 non-empty values must exist.
-                if (values.Count > 2)
+                // (does not support multivalues)
+                if (!hasMultiValue && values.Count > 2)
                 {
                     // 2) All values must have same value to quality ratio.
                     float gain = values[0].ToValue()[0] / values[0].Quality;
@@ -364,7 +368,7 @@ namespace POESKillTree.SkillTreeFiles
                 }
 
                 // Try for level range.
-                values = Values.FindAll(v => ((ValueAt)v).LevelSpecified && !v.IsEmpty()).Cast<ValueAt>().ToList();
+                values = Values.Cast<ValueAt>().Where(v => v.LevelSpecified).ToList();
                 if (values.Count > 2) // Don't convert 2 or less values.
                 {
                     values.Sort(new ValueLogicalComparer());
@@ -399,7 +403,7 @@ namespace POESKillTree.SkillTreeFiles
                 }
 
                 // Try for quality range.
-                values = Values.FindAll(v => ((ValueAt)v).QualitySpecified && !v.IsEmpty()).Cast<ValueAt>().ToList();
+                values = Values.Cast<ValueAt>().Where(v => v.QualitySpecified).ToList();
                 if (values.Count > 2) // Don't convert 2 or less values.
                 {
                     values.Sort(new ValueLogicalComparer());
@@ -511,12 +515,6 @@ namespace POESKillTree.SkillTreeFiles
             public bool StrikesWithBothWeapons = false;
             [XmlIgnore]
             public bool StrikesWithBothWeaponsSpecified { get { return StrikesWithBothWeapons; } }
-            // Defines whether skill can be used unarmed.
-            [XmlAttribute]
-            public bool Unarmed = false;
-            [XmlIgnore]
-            public bool UnarmedSpecified { get { return Unarmed; } }
-
             // Skill tags (Spell, AoE, Fire, etc)
             [XmlAttribute]
             public string Tags { get; set; }
@@ -673,8 +671,6 @@ namespace POESKillTree.SkillTreeFiles
                     RequiredWeapon = gem.RequiredWeapon;
                 if (!StrikesWithBothWeaponsSpecified && gem.StrikesWithBothWeaponsSpecified)
                     StrikesWithBothWeapons = gem.StrikesWithBothWeapons;
-                if (!UnarmedSpecified && gem.UnarmedSpecified)
-                    Unarmed = gem.Unarmed;
 
                 if (gem.Attributes != null)
                 {
@@ -981,7 +977,7 @@ namespace POESKillTree.SkillTreeFiles
             abstract internal ValuePriority Priority { get; }
 
             // Pattern to match number.
-            private static Regex ReValue = new Regex("(\\d+(\\.\\d+)?)");
+            private static Regex ReValue = new Regex("(-?\\d+(\\.\\d+)?)");
 
             // Returns true if value is empty, false otherwise.
             public bool IsEmpty()
@@ -1008,7 +1004,7 @@ namespace POESKillTree.SkillTreeFiles
                 foreach (Match m in ReValue.Matches(text))
                     value.Add(float.Parse(m.Groups[0].Value, System.Globalization.CultureInfo.InvariantCulture));
 
-                return value.Count > 0 ? value.ToArray() : null;
+                return value.Count > 0 ? value.ToArray() : new float[0];
             }
         }
 
@@ -1226,9 +1222,9 @@ namespace POESKillTree.SkillTreeFiles
 
             // Collect gem attributes and modifiers at gem level.
             foreach (var prop in gem.Properties)
-                attrs.Add(prop.Attribute, new List<float>(prop.Value));
+                attrs.Add(prop.Attribute, new List<float>(prop.Values));
             foreach (ItemMod mod in gem.Mods)
-                attrs.Add(mod.Attribute, new List<float>(mod.Value));
+                attrs.Add(mod.Attribute, new List<float>(mod.Values));
 
             // Check if gem is in database.
             if (GemIndex.ContainsKey(gem.Name))
@@ -1240,7 +1236,7 @@ namespace POESKillTree.SkillTreeFiles
                 foreach (ItemMod mod in item.Mods)
                 {
                     if (mod.Attribute == "+# to Level of Socketed Gems")
-                        plusLevel += (int)mod.Value[0];
+                        plusLevel += (int)mod.Values[0];
                     else
                     {
                         Match m = ReGemLevelKeyword.Match(mod.Attribute);
@@ -1248,7 +1244,7 @@ namespace POESKillTree.SkillTreeFiles
                         {
                             if (gem.Keywords.Contains(m.Groups[1].Value)
                                 || m.Groups[1].Value == "Elemental" && (gem.Keywords.Contains("Cold") || gem.Keywords.Contains("Fire") || gem.Keywords.Contains("Lightning")))
-                                plusLevel += (int)mod.Value[0];
+                                plusLevel += (int)mod.Values[0];
                         }
                     }
                 }
@@ -1500,10 +1496,6 @@ namespace POESKillTree.SkillTreeFiles
                 // Include form.
                 if (entry.IncludeForm != DamageForm.Any)
                     nature.Form |= entry.IncludeForm;
-
-                // Unarmed.
-                if (entry.Unarmed)
-                    nature.WeaponType |= WeaponType.Unarmed;
             }
 
             return nature;
@@ -1512,11 +1504,7 @@ namespace POESKillTree.SkillTreeFiles
         // Returns quality of gem.
         public static int QualityOf(Item gem)
         {
-            float ret;
-            if (gem.Properties.TryGetValue("Quality: #", 0, out ret))
-                return (int)ret;
-            else
-                return (int)gem.Properties.First("Quality: # (Max)", 0, 0);
+            return (int) gem.Properties.First("Quality: +#%", 0, 0);
         }
 
         // Writes database to file.

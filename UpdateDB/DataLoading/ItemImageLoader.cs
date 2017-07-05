@@ -1,79 +1,72 @@
-﻿using System.Drawing;
-using System.Drawing.Imaging;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
-using HtmlAgilityPack;
-using POESKillTree.Model.Items.Enums;
-using POESKillTree.Utils;
-using POESKillTree.Utils.Extensions;
+using log4net;
+using POESKillTree.Utils.WikiApi;
+
+using static POESKillTree.Utils.WikiApi.ItemRdfPredicates;
 
 namespace UpdateDB.DataLoading
 {
     /// <summary>
-    /// Loads the images of all base items from the unofficial Wiki at Gamepedia.
+    /// Retrieves images of items (bases and uniques) from the Wiki through its API.
     /// </summary>
-    public class ItemImageLoader : MultiDataLoader<Task<byte[]>>
+    public class ItemImageLoader : DataLoader
     {
-        private readonly bool _overwriteExisting;
 
-        private HttpClient _httpClient;
+        private static readonly ILog Log = LogManager.GetLogger(typeof(ItemImageLoader));
 
-        private WikiUtils _wikiUtils;
-
-        public ItemImageLoader(bool overwriteExisting)
+        // the wiki's item classes for which images are retrieved
+        private static readonly IReadOnlyList<string> RelevantWikiClasses = new[]
         {
-            _overwriteExisting = overwriteExisting;
+            "One Hand Axes", "Two Hand Axes", "Bows", "Claws", "Daggers",
+            "One Hand Maces", "Sceptres", "Two Hand Maces", "Staves",
+            "One Hand Swords", "Thrusting One Hand Swords", "Two Hand Swords", "Wands",
+            "Amulets", "Belts", "Quivers", "Rings",
+            "Body Armours", "Boots", "Helmets", "Gloves", "Shields", "Jewel",
+            "Active Skill Gems", "Support Skill Gems",
+        };
+
+        public override bool SavePathIsFolder
+        {
+            get { return true; }
         }
 
-        protected override async Task LoadAsync(HttpClient httpClient)
+        protected override async Task LoadAsync()
         {
             if (Directory.Exists(SavePath))
                 Directory.Delete(SavePath, true);
             Directory.CreateDirectory(SavePath);
 
-            _httpClient = httpClient;
-            _wikiUtils = new WikiUtils(httpClient);
-            var jewelTask = Task.WhenAll(ItemGroup.Jewel.Types().Select(LoadJewelAsync));
-            await _wikiUtils.ForEachBaseItemAsync(ParseTable);
-            await jewelTask;
+            // .ToList() so all tasks are started
+            var tasks = RelevantWikiClasses.Select(ReadJson).ToList();
+            await Task.WhenAll(tasks);
         }
 
-        private async Task LoadJewelAsync(ItemType jewel)
+        private async Task ReadJson(string wikiClass)
         {
-            var jewelName = jewel.ToString();
-            var url = await _wikiUtils.LoadItemBoxImageAsync(jewelName.Replace("Jewel", "_Jewel"));
-            SaveImage(jewelName.Replace("Jewel", " Jewel") + ".png", url);
-        }
-
-        private void ParseTable(HtmlNode table, ItemType itemType)
-        {
-            // Go through the first cell for each row
-            foreach (var cell in table.SelectNodes("tr/td[1]/span"))
+            // for items that have the given class ...
+            var conditions = new ConditionBuilder
             {
-                var url = cell.SelectSingleNode("span/a/img").Attributes["src"].Value;
-                var fileName = WebUtility.HtmlDecode(cell.SelectNodes("a")[0].InnerHtml) + ".png";
-                SaveImage(fileName, url);
-            }
-        }
+                {RdfItemClass, wikiClass}
+            };
+            // ... retrieve name and the icon url
+            var task = WikiApiAccessor.AskAndQueryImageInforUrls(conditions);
+            var results = (await task).ToList();
 
-        private void SaveImage(string fileName, string url)
-        {
-            if (_overwriteExisting || !File.Exists(Path.Combine(SavePath, fileName)))
-                AddSaveTask(fileName, _httpClient.GetByteArrayAsync(url));
-        }
-
-        protected override async Task SaveDataToStreamAsync(Task<byte[]> data, Stream stream)
-        {
-            using (var ms = new MemoryStream(await data))
-            using (var image = Image.FromStream(ms))
+            // download the images from the urls and save them
+            foreach (var result in results)
             {
-                var resized = image.Resize((int)(image.Width * WikiUtils.ItemImageResizeFactor),
-                    (int)(image.Height * WikiUtils.ItemImageResizeFactor));
-                resized.Save(stream, ImageFormat.Png);
+                var data = await HttpClient.GetByteArrayAsync(result.Url);
+                foreach (var name in result.Names)
+                {
+                    var fileName = name + ".png";
+                    WikiApiUtils.SaveImage(data, Path.Combine(SavePath, fileName), true);
+                }
             }
+
+            Log.Info($"Retrieved {results.Count} images for class {wikiClass}.");
         }
     }
 }

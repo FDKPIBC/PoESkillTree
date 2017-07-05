@@ -1,10 +1,9 @@
 ﻿using System.Xml.Serialization;
-using POESKillTree.Model.Items.Affixes;
 using POESKillTree.Model.Items.Enums;
 
 namespace POESKillTree.Model.Items
 {
-    // Contains the classes that allow serialization and deserialization of ItemList.xml
+    // Contains the classes that allow serialization and deserialization of Items.xml
 
     [XmlRoot(Namespace = "", IsNullable = false, ElementName = "ItemList")]
     public class XmlItemList
@@ -13,16 +12,18 @@ namespace POESKillTree.Model.Items
         public XmlItemBase[] ItemBases { get; set; }
     }
     
+
     public class XmlItemBase
     {
-        [XmlArrayItem("Stat")]
-        public XmlStat[] Implicit { get; set; }
-        
-        [XmlArrayItem("Stat")]
-        public XmlStat[] Properties { get; set; }
+        public string[] Implicit { get; set; }
+
+        public string[] Properties { get; set; }
         
         [XmlAttribute]
-        public ItemType ItemType { get; set; }
+        public ItemClass ItemClass { get; set; }
+
+        [XmlAttribute]
+        public Tags Tags { get; set; }
         
         [XmlAttribute]
         public string Name { get; set; }
@@ -38,5 +39,19 @@ namespace POESKillTree.Model.Items
 
         [XmlAttribute]
         public int Intelligence { get; set; }
+
+        [XmlAttribute]
+        public bool DropDisabled { get; set; }
+
+        public bool ShouldSerializeDropDisabled() => DropDisabled;
+
+        [XmlAttribute]
+        public int InventoryHeight { get; set; }
+
+        [XmlAttribute]
+        public int InventoryWidth { get; set; }
+
+        [XmlAttribute]
+        public string MetadataId { get; set; }
     }
 }
